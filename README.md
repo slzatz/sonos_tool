@@ -29,7 +29,7 @@ Make sure `~/.local/bin` is on your `PATH`. Then pick your speaker:
 
 ```bash
 sonos speakers                      # discover players on the network
-sonos speaker set "Sitting Room"    # saved to ~/.sonos/config.toml
+sonos speaker set "Living Room"    # saved to ~/.sonos/config.toml
 ```
 
 To update later: `cd ~/sonos_tool && git pull` (editable install picks up changes).
@@ -39,7 +39,7 @@ To update later: `cd ~/sonos_tool && git pull` (editable install picks up change
 `~/.sonos/config.toml`:
 
 ```toml
-speaker = "Sitting Room"
+speaker = "Living Room"
 music_service = "Amazon Music"
 ```
 
