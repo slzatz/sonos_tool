@@ -29,9 +29,18 @@ in the Sonos app (Amazon Music by default).
    uv tool install --editable .        # installs the `sonos` command into ~/.local/bin
    uv tool update-shell                # adds ~/.local/bin to PATH if needed; reopen the shell
    ```
-   (`pipx install --editable .` works too.) On macOS the first `sonos speakers` may trigger
-   a firewall prompt asking whether Python may accept incoming connections; allow it, since
-   discovery listens for replies from the speakers.
+   (`pipx install --editable .` works too.)
+
+   `uv tool update-shell` checks whether uv's tool directory (`uv tool dir --bin`, normally
+   `~/.local/bin`) is on your `PATH` and, if not, appends an `export PATH=...` line to your
+   shell's startup file (`~/.zshrc` on macOS, `~/.bashrc` on most Linux setups). It is safe to
+   run repeatedly and changes nothing if the directory is already on `PATH`. The edit only
+   applies to new shells, so open a new terminal before the next step. Homebrew's `uv` still
+   needs this step, because tool commands go to `~/.local/bin` regardless of where `uv` lives.
+
+   On macOS the first `sonos speakers` may trigger a firewall prompt asking whether Python
+   may accept incoming connections; allow it, since discovery listens for replies from the
+   speakers.
 3. Be on the same network as the speakers, then pick your default speaker:
    ```bash
    sonos speakers                      # every player, grouped by S1/S2 system
