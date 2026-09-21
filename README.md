@@ -13,26 +13,34 @@ sonos status
 Music search uses the music service configured on your Sonos system (Amazon Music by
 default) through the [SoCo](https://github.com/SoCo/SoCo) library.
 
-## Install (Linux and macOS)
+## Install on a fresh machine (Linux or macOS)
 
-Requires [uv](https://docs.astral.sh/uv/) (or pipx). Python 3.13 is downloaded
-automatically if you do not have it.
+1. Install [uv](https://docs.astral.sh/uv/) if you do not have it:
+   `brew install uv` on macOS, `pacman -S uv` on Arch, or
+   `curl -LsSf https://astral.sh/uv/install.sh | sh` anywhere.
+2. Clone and install. Python 3.13 is downloaded automatically if missing.
+   ```bash
+   git clone https://github.com/slzatz/sonos_tool.git ~/sonos_tool
+   cd ~/sonos_tool
+   uv tool install --editable .        # installs the `sonos` command into ~/.local/bin
+   uv tool update-shell                # adds ~/.local/bin to PATH if needed; reopen the shell
+   ```
+   (`pipx install --editable .` works too.)
+3. Be on the same network as the speakers, then pick your default speaker:
+   ```bash
+   sonos speakers                      # every player, grouped by S1/S2 system
+   sonos speaker set "Living Room"    # saved to ~/.sonos/config.toml
+   ```
+4. Link the music service once so searches work from this machine:
+   ```bash
+   sonos auth                          # prints an Amazon sign-in link and waits
+   sonos auth --status                 # confirm
+   ```
+   The token is stored per machine **and per Sonos household** in
+   `~/.config/SoCo/token_store.json`. If you later switch the default speaker to one in
+   a different household (S1 vs S2), run `sonos auth` again for that household.
 
-```bash
-git clone git@github.com:slzatz/sonos_tool.git ~/sonos_tool
-cd ~/sonos_tool
-uv tool install --editable .        # installs the `sonos` command into ~/.local/bin
-# or: pipx install --editable .
-```
-
-Make sure `~/.local/bin` is on your `PATH`. Then pick your speaker:
-
-```bash
-sonos speakers                      # discover players on the network
-sonos speaker set "Living Room"    # saved to ~/.sonos/config.toml
-```
-
-To update later: `cd ~/sonos_tool && git pull` (editable install picks up changes).
+To update later: `cd ~/sonos_tool && git pull` (the editable install picks up changes).
 
 ## Configuration
 
@@ -55,6 +63,7 @@ Add `--json` before the command for machine-readable output.
 | Command | What it does |
 |---|---|
 | `sonos speakers` | Discover all Sonos players on the LAN, grouped by system (S1/S2) |
+| `sonos auth [--status] [--complete]` | Link the music service for searches from this machine |
 | `sonos speaker` | Show the default speaker, its group and volume |
 | `sonos speaker set NAME` | Persist NAME as the default speaker |
 | `sonos status` | Transport state, current track, volume |
@@ -119,6 +128,8 @@ Output conventions that make the tool easy to drive programmatically:
 ```
 ~/.sonos/config.toml                       speaker and music service
 ~/.sonos/speaker_cache.json                {name: ip}
+~/.sonos/pending_auth.json                 present only between `sonos auth` and `--complete`
+~/.config/SoCo/token_store.json            music-service token, per household (written by SoCo)
 ~/.sonos/search_results/track_search.json  last track search
 ~/.sonos/search_results/album_search.json  last album search
 ~/.sonos/playlists/<name>                  local playlists (JSON list; filename is the name)
@@ -139,10 +150,12 @@ system for a single command.
 
 ## Troubleshooting
 
+- **"not authorized for the Sonos household of ..."** (exit 2): run `sonos auth`. Searches
+  are made through your default speaker's household and each household needs its own
+  link on each machine.
 - **"rejected the request (authorization expired or temporarily unavailable)"** (exit 2):
-  Amazon's Sonos endpoint intermittently answers 401 for a few seconds; the tool already
-  retries with backoff. Wait a moment and retry. If it keeps failing, re-authorize the
-  music service in the Sonos app under Settings > Services & Voice.
+  the tool already retried with backoff. Wait a moment and retry; if it keeps failing,
+  run `sonos auth` again.
 - **"Sonos refused to enqueue ..."**: the speaker's own lookup of the item with the music
   service failed (UPnP error 800). This is also intermittent and is retried; run the
   add command again.

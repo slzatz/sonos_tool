@@ -60,10 +60,11 @@ is `sonos volume up 5`.
 
 - `sonos search ...` returns nothing: try fewer words (drop "the", drop the album name, or
   search by artist and title only) before telling the user it was not found.
-- Exit code 2, music service rejected the request: this is usually transient on Amazon's
-  side and the tool already retried with backoff. Wait a few seconds and retry the search
-  once; if it still fails, tell the user to re-authorize the service in the Sonos app
-  (Settings > Services & Voice).
+- Exit code 2, "not authorized for the Sonos household": this machine has not linked the
+  music service for that household. Tell the user to run `sonos auth` in a terminal (it
+  needs a browser sign-in); do not attempt it yourself.
+- Exit code 2, "rejected the request": the tool already retried with backoff. Wait a few
+  seconds and retry once; if it still fails, tell the user to run `sonos auth`.
 - Exit code 4, speaker not found: run `sonos speakers` and report the available names.
 - Exit code 3, no speaker configured: run `sonos speakers` then `sonos speaker set NAME`.
 - Search results are cached per kind (track or album). A new search of the same kind

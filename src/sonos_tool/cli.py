@@ -254,7 +254,7 @@ def _run_search(c: Context, kind: str, query: tuple[str, ...]):
     q = " ".join(query).strip()
     if not q:
         raise SonosToolError("QUERY is required.")
-    items = actions.search(kind, q)
+    items = actions.search(c.player().device, kind, q)
     if not items:
         c.emit([], f"No {kind}s found for '{q}'.")
         return
@@ -470,6 +470,54 @@ def playlist_export(c: Context, name, native_name):
     """
     target = c.player().create_native_playlist_from_local(name, native_name)
     c.emit({"local": name, "native": target}, f"Created native Sonos playlist '{target}' from '{name}'")
+
+
+
+# --- music service authorization -----------------------------------------------
+
+
+@cli.command()
+@click.option("--complete", "complete", is_flag=True, help="Finish an authorization started earlier.")
+@click.option("--status", "show_status", is_flag=True, help="Report whether this machine is authorized.")
+@pass_ctx
+def auth(c: Context, complete, show_status):
+    """Link the music service (Amazon Music) for searches from this machine.
+
+    Needed once per machine and per Sonos household (S1 and S2 systems are separate).
+    Prints a sign-in link; after you sign in, the token is saved so `sonos search` works.
+    In a terminal the command waits for you; from a script run `sonos auth`, sign in,
+    then `sonos auth --complete`.
+    """
+    device = c.player().device
+    if show_status:
+        ms = actions.music_service(device)
+        ok = actions.has_token(ms, device)
+        data = {"service": config.music_service_name(), "speaker": device.player_name,
+                "household": device.household_id, "auth_type": ms.auth_type, "authorized": ok}
+        c.emit(data, f"{data['service']} for household of '{device.player_name}': "
+                     f"{'authorized' if ok else 'NOT authorized (run `sonos auth`)'}")
+        return
+    if complete:
+        pending = store.load_pending_auth()
+        if not pending:
+            raise SonosToolError("No authorization in progress. Run `sonos auth` first.")
+        actions.complete_auth(device, pending)
+        store.clear_pending_auth()
+        c.emit({"authorized": True, "household": device.household_id},
+               f"Authorized {config.music_service_name()} for the household of '{device.player_name}'.")
+        return
+    pending = actions.begin_auth(device)
+    store.save_pending_auth(pending)
+    text = (f"Sign in to {config.music_service_name()} at:\n\n  {pending['url']}\n\n"
+            f"(link code {pending['link_code']}, household of '{device.player_name}')")
+    if c.as_json or not sys.stdin.isatty():
+        c.emit({**pending, "next": "sonos auth --complete"}, text + "\n\nThen run: sonos auth --complete")
+        return
+    click.echo(text)
+    click.pause("Press Enter after you have signed in...")
+    actions.complete_auth(device, pending)
+    store.clear_pending_auth()
+    click.echo(f"Authorized {config.music_service_name()} for the household of '{device.player_name}'.")
 
 
 def main():

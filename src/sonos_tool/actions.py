@@ -21,6 +21,7 @@ import soco
 from soco.data_structures import DidlMusicTrack
 from soco.exceptions import MusicServiceAuthException, MusicServiceException, SoCoException, SoCoUPnPException
 from soco.music_services import MusicService
+from soco.music_services.token_store import JsonFileTokenStore
 
 from . import config, store
 from .didl import track_metadata
@@ -33,23 +34,53 @@ ENQUEUE_ATTEMPTS = 3
 
 # --- music service search --------------------------------------------------
 
-def _music_service() -> MusicService:
-    """A fresh instance each call: it reloads SoCo's token store
-    (~/.config/SoCo/token_store.json), which another process may have refreshed."""
-    return MusicService(config.music_service_name())
+def _token_store():
+    """SoCo's JSON token store; $SONOS_TOKEN_STORE overrides the default
+    ~/.config/SoCo/token_store.json (used by tests and for isolation)."""
+    override = os.environ.get("SONOS_TOKEN_STORE")
+    return JsonFileTokenStore(override) if override else JsonFileTokenStore.from_config_file()
 
 
-# Amazon's SMAPI endpoint intermittently answers 401 for a few seconds even with a
-# valid token, so a search is retried with backoff before we call it an auth failure.
+def music_service(device: soco.SoCo) -> MusicService:
+    """The music service bound to the household of `device`.
+
+    Binding to the configured speaker matters: SoCo otherwise talks through
+    whichever speaker answered multicast first, and on a network with two Sonos
+    households (S1 and S2) that changes from call to call. The authorization
+    token is stored per household, so a random household means random 401s.
+    A fresh instance is built per call so a token refreshed by another process
+    is picked up.
+    """
+    return MusicService(config.music_service_name(), token_store=_token_store(), device=device)
+
+
+def has_token(ms: MusicService, device: soco.SoCo) -> bool:
+    return ms.auth_type not in ("DeviceLink", "AppLink") or ms.token_store.has_token(
+        ms.service_id, device.household_id
+    )
+
+
+def _auth_hint(device: soco.SoCo) -> str:
+    return (
+        f"{config.music_service_name()} is not authorized for the Sonos household of "
+        f"'{device.player_name}' on this machine. Run `sonos auth` once to link it."
+    )
+
+
+# Amazon's SMAPI endpoint occasionally answers 401 even with a valid token, so a
+# search is retried with backoff before we call it an auth failure.
 SEARCH_BACKOFF = (1, 2, 3)
 
 
-def _raw_search(category: str, query: str, attempts: int = len(SEARCH_BACKOFF) + 1):
+def _raw_search(device: soco.SoCo, category: str, query: str, attempts: int = len(SEARCH_BACKOFF) + 1):
     """Run the music-service search, retrying on HTTP 401 with a reloaded token."""
     last: Exception | None = None
     for attempt in range(attempts):
+        ms = music_service(device)
+        if not has_token(ms, device):
+            raise AuthError(_auth_hint(device))
         try:
-            return _music_service().search(category, query)
+            return ms.search(category, query)
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else None
             if status != 401:
@@ -64,13 +95,55 @@ def _raw_search(category: str, query: str, attempts: int = len(SEARCH_BACKOFF) +
             raise SonosToolError(f"Music service error: {e}") from e
     raise AuthError(
         f"{config.music_service_name()} rejected the request (authorization expired or "
-        "temporarily unavailable). Retry in a minute; if it keeps failing, re-authorize "
-        "the service in the Sonos app (Settings > Services & Voice)."
+        "temporarily unavailable). Retry in a minute; if it keeps failing, run `sonos auth` "
+        "to re-link the service."
     ) from last
 
 
-def search(kind: str, query: str) -> list[dict]:
-    """Search the music service for tracks or albums.
+def begin_auth(device: soco.SoCo, attempts: int = 3) -> dict:
+    """Start an AppLink/DeviceLink authorization. Returns {url, link_code, link_device_id, household}."""
+    ms = music_service(device)
+    if ms.auth_type not in ("DeviceLink", "AppLink"):
+        raise SonosToolError(
+            f"{config.music_service_name()} uses auth type {ms.auth_type}; no linking step is needed."
+        )
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            url = ms.begin_authentication()  # sets ms.link_code / ms.link_device_id
+            link_code, link_device_id = ms.link_code, ms.link_device_id
+            return {
+                "url": url,
+                "link_code": link_code,
+                "link_device_id": link_device_id,
+                "household": device.household_id,
+                "speaker": device.player_name,
+            }
+        except (requests.exceptions.HTTPError, MusicServiceException) as e:
+            last = e
+            if attempt < attempts - 1:
+                sleep(1)
+    raise SonosToolError(f"Could not start authorization with {config.music_service_name()}: {last}") from last
+
+
+def complete_auth(device: soco.SoCo, pending: dict) -> None:
+    if pending.get("household") != device.household_id:
+        raise SonosToolError(
+            "The pending authorization is for a different Sonos household than "
+            f"'{device.player_name}'. Run `sonos auth` again."
+        )
+    ms = music_service(device)
+    try:
+        ms.complete_authentication(pending["link_code"], pending.get("link_device_id"))
+    except (requests.exceptions.HTTPError, MusicServiceException, MusicServiceAuthException) as e:
+        raise AuthError(
+            f"Authorization not completed: {e}. Finish signing in at the link, then run "
+            "`sonos auth --complete` again."
+        ) from e
+
+
+def search(device: soco.SoCo, kind: str, query: str) -> list[dict]:
+    """Search the music service (bound to `device`'s household) for tracks or albums.
 
     Saves the results to ~/.sonos/search_results/<kind>_search.json so a later
     `queue add-*` / `playlist add --from-search` can refer to them by position.
@@ -79,7 +152,7 @@ def search(kind: str, query: str) -> list[dict]:
     item id and the enqueued URI to use the same encoding.
     """
     category = {"track": "tracks", "album": "albums"}[kind]
-    results = _raw_search(category, query)
+    results = _raw_search(device, category, query)
 
     items: list[dict] = []
     if kind == "track":

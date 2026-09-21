@@ -13,9 +13,15 @@ TRACKS = [
 ]
 
 
+class FakeDevice:
+    player_name = "Fake Room"
+    household_id = "Sonos_FAKE"
+
+
 class FakePlayer:
     def __init__(self):
         self.name = "Fake Room"
+        self.device = FakeDevice()
         self.q = [{"title": "Existing", "artist": "Someone", "album": "Album"}]
         self.vol = 30
         self.played = None
@@ -78,7 +84,7 @@ def test_help_lists_commands():
 
 
 def test_search_then_add_track_with_play(fake, monkeypatch):
-    monkeypatch.setattr(actions, "search", lambda kind, q: (store.save_search(kind, TRACKS), TRACKS)[1])
+    monkeypatch.setattr(actions, "search", lambda device, kind, q: (store.save_search(kind, TRACKS), TRACKS)[1])
     r = run("search", "track", "heart", "of", "gold")
     assert r.exit_code == 0
     assert "1. Heart of Gold - Neil Young - Harvest" in r.output
@@ -163,7 +169,9 @@ def test_search_parses_and_quotes_amazon_ids(sonos_home, monkeypatch):
         metadata = {"id": "catalog:track:asin:B002G3NK88", "track_metadata": TM()}
 
     class FakeMS:
-        def __init__(self, name):
+        auth_type = "Anonymous"
+
+        def __init__(self, name, token_store=None, device=None):
             pass
 
         def search(self, category, query):
@@ -171,7 +179,7 @@ def test_search_parses_and_quotes_amazon_ids(sonos_home, monkeypatch):
             return [Track()]
 
     monkeypatch.setattr(actions, "MusicService", FakeMS)
-    items = actions.search("track", "heart of gold")
+    items = actions.search(object(), "track", "heart of gold")
     assert items[0]["item_id"] == "catalog%3Atrack%3Aasin%3AB002G3NK88"
     assert items[0]["uri"].endswith("?sid=201&amp;sn=0")
     assert items[0]["album"] == ""
@@ -184,7 +192,9 @@ def test_search_retries_401_then_auth_error(sonos_home, monkeypatch):
     calls = {"n": 0}
 
     class FakeMS:
-        def __init__(self, name):
+        auth_type = "Anonymous"
+
+        def __init__(self, name, token_store=None, device=None):
             pass
 
         def search(self, category, query):
@@ -197,7 +207,7 @@ def test_search_retries_401_then_auth_error(sonos_home, monkeypatch):
     monkeypatch.setattr(actions, "sleep", lambda s: None)
     from sonos_tool.errors import AuthError
     with pytest.raises(AuthError, match="authorization expired|temporarily unavailable"):
-        actions.search("album", "x")
+        actions.search(object(), "album", "x")
     assert calls["n"] == len(actions.SEARCH_BACKOFF) + 1
 
 
@@ -210,3 +220,62 @@ def test_playlist_entry_from_queue_uri_new_and_old_formats():
         "x-sonos-http:catalog/tracks/B01MQYJR6J/song.mp4?sid=201&flags=8224&sn=2", "T", "A", "Al")
     assert old["item_id"] == "catalog/tracks/B01MQYJR6J/"
     assert old["uri"] == "soco://0fffffffcatalog/tracks/B01MQYJR6J/?sid=201&amp;sn=0"
+
+
+
+def test_search_without_token_fails_fast(sonos_home, monkeypatch):
+    class Store:
+        def has_token(self, sid, hh):
+            return False
+
+    class FakeMS:
+        auth_type = "AppLink"
+        service_id = 201
+
+        def __init__(self, name, token_store=None, device=None):
+            self.token_store = Store()
+
+        def search(self, *a):
+            raise AssertionError("search must not be attempted without a token")
+
+    monkeypatch.setattr(actions, "MusicService", FakeMS)
+    from sonos_tool.errors import AuthError
+    with pytest.raises(AuthError, match="sonos auth"):
+        actions.search(FakeDevice(), "track", "x")
+
+
+def test_auth_two_step_flow(fake, monkeypatch):
+    state = {}
+
+    class Store:
+        def has_token(self, sid, hh):
+            return "token" in state
+
+    class FakeMS:
+        auth_type = "AppLink"
+        service_id = 201
+
+        def __init__(self, name, token_store=None, device=None):
+            self.token_store = Store()
+
+        def begin_authentication(self):
+            self.link_code, self.link_device_id = "CODE123", "dev-1"
+            return "https://amazon.example/link"
+
+        def complete_authentication(self, link_code, link_device_id=None):
+            assert (link_code, link_device_id) == ("CODE123", "dev-1")
+            state["token"] = True
+
+    monkeypatch.setattr(actions, "MusicService", FakeMS)
+    r = run("auth", "--status")
+    assert r.exit_code == 0 and "NOT authorized" in r.output
+    r = run("auth")  # CliRunner stdin is not a tty -> two-step mode
+    assert r.exit_code == 0, r.output
+    assert "https://amazon.example/link" in r.output and "sonos auth --complete" in r.output
+    assert store.load_pending_auth()["household"] == "Sonos_FAKE"
+    r = run("auth", "--complete")
+    assert r.exit_code == 0 and "Authorized" in r.output
+    assert store.load_pending_auth() is None
+    assert "authorized" in run("auth", "--status").output
+    r = run("auth", "--complete")
+    assert r.exit_code == 1  # nothing pending

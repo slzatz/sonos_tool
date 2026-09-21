@@ -38,6 +38,10 @@ def speaker_cache_path() -> Path:
     return sonos_dir() / "speaker_cache.json"
 
 
+def pending_auth_path() -> Path:
+    return sonos_dir() / "pending_auth.json"
+
+
 def search_results_dir() -> Path:
     return sonos_dir() / "search_results"
 
@@ -142,3 +146,18 @@ def load_speaker_cache() -> dict[str, str]:
 
 def save_speaker_cache(cache: dict[str, str]) -> None:
     _write_json(speaker_cache_path(), cache)
+
+
+# --- pending music-service authorization (between `sonos auth` and --complete) ---
+
+
+def load_pending_auth() -> dict | None:
+    return _read_json(pending_auth_path(), None)
+
+
+def save_pending_auth(data: dict) -> None:
+    _write_json(pending_auth_path(), data)
+
+
+def clear_pending_auth() -> None:
+    pending_auth_path().unlink(missing_ok=True)
