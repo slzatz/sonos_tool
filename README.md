@@ -4,8 +4,8 @@ A command-line tool for controlling Sonos speakers, designed to be equally usabl
 a person at a terminal and by an AI agent running shell commands.
 
 ```
-sonos search track heart of gold neil young
-sonos queue add-track 2 --play
+sonos search track thunder road springsteen
+sonos queue add-track 1 --play
 sonos volume down
 sonos status
 ```
@@ -14,6 +14,10 @@ Music search uses the music service configured on your Sonos system (Amazon Musi
 default) through the [SoCo](https://github.com/SoCo/SoCo) library.
 
 ## Install on a fresh machine (Linux or macOS)
+
+Prerequisites: `git` (macOS offers to install it on first use), a Sonos system on the
+same network as this machine, and a music service already linked to that Sonos system
+in the Sonos app (Amazon Music by default).
 
 1. Install [uv](https://docs.astral.sh/uv/) if you do not have it:
    `brew install uv` on macOS, `pacman -S uv` on Arch, or
@@ -25,7 +29,9 @@ default) through the [SoCo](https://github.com/SoCo/SoCo) library.
    uv tool install --editable .        # installs the `sonos` command into ~/.local/bin
    uv tool update-shell                # adds ~/.local/bin to PATH if needed; reopen the shell
    ```
-   (`pipx install --editable .` works too.)
+   (`pipx install --editable .` works too.) On macOS the first `sonos speakers` may trigger
+   a firewall prompt asking whether Python may accept incoming connections; allow it, since
+   discovery listens for replies from the speakers.
 3. Be on the same network as the speakers, then pick your default speaker:
    ```bash
    sonos speakers                      # every player, grouped by S1/S2 system
@@ -41,6 +47,7 @@ default) through the [SoCo](https://github.com/SoCo/SoCo) library.
    a different household (S1 vs S2), run `sonos auth` again for that household.
 
 To update later: `cd ~/sonos_tool && git pull` (the editable install picks up changes).
+To remove: `uv tool uninstall sonos-tool` and delete `~/.sonos` if you want the playlists gone too.
 
 ## Configuration
 
@@ -97,13 +104,12 @@ those numbers. Several positions can be given at once, and `--play` starts playb
 the first item added.
 
 ```
-$ sonos search album harvest neil young
-1. Harvest - Neil Young
-2. Harvest Moon - Neil Young
-3. Harvest (2009 Remaster) - Neil Young
+$ sonos search album nebraska springsteen
+1. Nebraska - Bruce Springsteen
+2. Live from Nowhere: Songs from Bruce Springsteen's Nebraska - Danny Golden
 ...
 $ sonos queue add-album 1 --play
-Added album 'Harvest' by Neil Young at queue positions 1-10
+Added album 'Nebraska' by Bruce Springsteen at queue positions 1-10
 Playing from queue position 1
 ```
 
@@ -119,8 +125,8 @@ this CLI. Copy or symlink it into any project's `.claude/skills/` directory and 
 Output conventions that make the tool easy to drive programmatically:
 
 - Results on stdout, errors on stderr.
-- Exit codes: 0 success, 1 general error, 2 music-service authorization expired,
-  3 configuration missing, 4 speaker unreachable.
+- Exit codes: 0 success, 1 general error, 2 music service not authorized or rejected the
+  request, 3 configuration missing, 4 speaker unreachable.
 - `--json` gives one JSON document per command.
 
 ## Runtime files
@@ -149,6 +155,10 @@ no discovery runs at all. Use `--speaker NAME` to address a speaker in the other
 system for a single command.
 
 ## Troubleshooting
+
+- **Search results look wrong for a well-known artist**: some artists are not on Amazon
+  Music at all (Neil Young, for one), so searches return only covers and karaoke versions.
+  That is the catalog, not the tool.
 
 - **"not authorized for the Sonos household of ..."** (exit 2): run `sonos auth`. Searches
   are made through your default speaker's household and each household needs its own
