@@ -88,13 +88,16 @@ def cli(ctx, speaker, as_json):
 @cli.command()
 @pass_ctx
 def speakers(c: Context):
-    """Discover all Sonos players on the network."""
-    found = config.discover_speakers()
-    data = [{"name": d.player_name, "ip": d.ip_address, "model": d.get_speaker_info().get("model_name", "")} for d in found]
+    """Discover all Sonos players on the network, grouped by system (S1/S2 household)."""
+    data = config.discover_speakers()
     if not data:
         raise SonosToolError("No Sonos speakers found on the network.")
-    text = "\n".join(f"{d['name']}  ({d['ip']}, {d['model']})" for d in data)
-    c.emit(data, text)
+    lines = []
+    for hh in dict.fromkeys(d["household"] for d in data):
+        members = [d for d in data if d["household"] == hh]
+        lines.append(f"{members[0]['generation']} system ({hh}):")
+        lines.extend(f"  {d['name']}  ({d['ip']}, {d['model']})" for d in members)
+    c.emit(data, "\n".join(lines))
 
 
 @cli.group(invoke_without_command=True)

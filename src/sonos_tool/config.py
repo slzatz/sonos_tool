@@ -13,7 +13,7 @@ import tomllib
 from time import sleep
 
 import soco
-from soco.discovery import by_name
+from soco.discovery import by_name, scan_network, scan_network_get_by_name
 
 from . import store
 from .errors import ConfigError, SpeakerNotFound
@@ -83,27 +83,77 @@ def _try_cached(name: str) -> soco.SoCo | None:
     return None
 
 
-def connect_speaker(name: str, retries: int = 3) -> soco.SoCo:
-    """Return a SoCo device for the named speaker, or raise SpeakerNotFound."""
+def _remember(name: str, device: soco.SoCo) -> soco.SoCo:
+    cache = store.load_speaker_cache()
+    cache[name] = device.ip_address
+    store.save_speaker_cache(cache)
+    return device
+
+
+def connect_speaker(name: str, retries: int = 2) -> soco.SoCo:
+    """Return a SoCo device for the named speaker, or raise SpeakerNotFound.
+
+    Order: cached IP (instant) -> multicast discovery by name (fast, but only
+    sees the household that answers first) -> subnet scan across all households.
+    """
     device = _try_cached(name)
     if device is not None:
         return device
     for attempt in range(retries):
         device = by_name(name)
         if device is not None:
-            cache = store.load_speaker_cache()
-            cache[name] = device.ip_address
-            store.save_speaker_cache(cache)
-            return device
+            return _remember(name, device)
         if attempt < retries - 1:
-            sleep(1)
+            sleep(0.5)
+    device = scan_network_get_by_name(name, multi_household=True, **SCAN_KWARGS)
+    if device is not None:
+        return _remember(name, device)
     raise SpeakerNotFound(
         f"Could not find a Sonos speaker named '{name}' on the network. "
         "Run `sonos speakers` to see available players."
     )
 
 
-def discover_speakers(timeout: float = 5.0) -> list[soco.SoCo]:
-    """All Sonos players on the LAN, sorted by name."""
-    found = soco.discover(timeout=timeout) or set()
-    return sorted(found, key=lambda d: d.player_name.lower())
+# Sonos S1 (legacy app) firmware stopped in the 57.x line; S2 is 60+.
+S2_MIN_SOFTWARE_MAJOR = 60
+
+# Subnet scan settings: 0.3 s per probe with many threads covers a /24 in ~1-2 s.
+SCAN_KWARGS = {"max_threads": 128, "scan_timeout": 0.3}
+
+
+def generation(software_version: str) -> str:
+    """'S1' or 'S2' from a speaker's software_version string like '97.1-80312'."""
+    try:
+        major = int(software_version.split(".")[0])
+    except (ValueError, AttributeError):
+        return "?"
+    return "S2" if major >= S2_MIN_SOFTWARE_MAJOR else "S1"
+
+
+def discover_speakers() -> list[dict]:
+    """Every Sonos player on the LAN, across all households.
+
+    Multicast discovery returns only the household that answers first, which on a
+    network with both an S1 and an S2 system hides one of them. A subnet scan with
+    multi_household=True finds every zone; multicast is the fallback if the scan
+    comes back empty (e.g. an unusual netmask).
+
+    Each entry: {name, ip, model, household, generation}, sorted by generation
+    (S2 first) then name.
+    """
+    zones = scan_network(multi_household=True, **SCAN_KWARGS) or set()
+    if not zones:
+        zones = soco.discover(timeout=5) or set()
+    out = []
+    for z in zones:
+        info = z.get_speaker_info()
+        out.append(
+            {
+                "name": z.player_name,
+                "ip": z.ip_address,
+                "model": info.get("model_name", ""),
+                "household": z.household_id,
+                "generation": generation(info.get("software_version", "")),
+            }
+        )
+    return sorted(out, key=lambda d: (d["generation"] != "S2", d["name"].lower()))

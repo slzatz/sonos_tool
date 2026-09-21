@@ -54,7 +54,7 @@ Add `--json` before the command for machine-readable output.
 
 | Command | What it does |
 |---|---|
-| `sonos speakers` | Discover all Sonos players on the LAN |
+| `sonos speakers` | Discover all Sonos players on the LAN, grouped by system (S1/S2) |
 | `sonos speaker` | Show the default speaker, its group and volume |
 | `sonos speaker set NAME` | Persist NAME as the default speaker |
 | `sonos status` | Transport state, current track, volume |
@@ -127,6 +127,16 @@ Output conventions that make the tool easy to drive programmatically:
 Local playlist entries and search results share one shape:
 `{"title", "artist", "album", "item_id", "uri"}`.
 
+## Two Sonos systems on one network
+
+Households running the legacy S1 app and the current S2 app are separate systems
+that share a LAN. Sonos multicast discovery answers with only the household that
+responds first, so `sonos speakers` instead scans the subnet and lists every
+household, labelled S1 or S2. Looking a speaker up by name falls back to the same
+scan, so `sonos speaker set` works for either system. Once a speaker's IP is cached
+no discovery runs at all. Use `--speaker NAME` to address a speaker in the other
+system for a single command.
+
 ## Troubleshooting
 
 - **"rejected the request (authorization expired or temporarily unavailable)"** (exit 2):
@@ -139,7 +149,7 @@ Local playlist entries and search results share one shape:
 - **"Could not find a Sonos speaker named ..."** (exit 4): run `sonos speakers`; names are
   case-sensitive. The cache in `~/.sonos/speaker_cache.json` can be deleted safely.
 - **No speakers discovered**: the machine must be on the same network/VLAN as the
-  speakers, and SSDP multicast must not be blocked.
+  speakers. The subnet scan assumes a /24 or smaller network; multicast is the fallback.
 
 ## Development
 
