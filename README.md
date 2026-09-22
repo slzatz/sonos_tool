@@ -60,7 +60,9 @@ in the Sonos app (Amazon Music by default).
    [TypeSafe](https://typesafe.ai) API key from https://console.typesafe.ai/keys and either
    `export TYPESAFE_API_KEY=...` in your shell startup file or add
    `typesafe_api_key = "..."` to `~/.sonos/config.toml`. Without a key everything else works
-   and `--play` / `--add` exit with code 3.
+   and `--play` / `--add` exit with code 3. On a machine where `sonos` was installed before
+   this feature existed, run `uv tool install --editable . --reinstall` first; the error
+   `No module named typesafe_sdk` means exactly that.
 
 To update later: `cd ~/sonos_tool && git pull` (the editable install picks up code changes;
 if `pyproject.toml` gained a dependency, also run `uv tool install --editable . --reinstall`).

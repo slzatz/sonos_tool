@@ -90,6 +90,11 @@ def pick(kind: str, query: str, items: list[dict]) -> dict:
         choice, confidence, probabilities = _ask(key, state, INSTRUCTIONS[kind], criteria)
     except SonosToolError:
         raise
+    except ModuleNotFoundError as e:
+        raise ConfigError(
+            f"{e}. The installed `sonos` predates this dependency; from the repository run "
+            "`uv tool install --editable . --reinstall`."
+        ) from e
     except Exception as e:  # SDK errors are many; map them all to one exit code
         name = type(e).__name__
         if "Authentication" in name or "PermissionDenied" in name:

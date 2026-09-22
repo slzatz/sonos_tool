@@ -76,3 +76,12 @@ def test_pick_wraps_sdk_errors(sonos_home, key, monkeypatch):
     monkeypatch.setattr(jev, "_ask", down)
     with pytest.raises(SonosToolError, match="request failed"):
         jev.pick("track", "x", ITEMS)
+
+
+def test_pick_missing_sdk_says_how_to_reinstall(sonos_home, key, monkeypatch):
+    def no_sdk(*a):
+        raise ModuleNotFoundError("No module named 'typesafe_sdk'")
+
+    monkeypatch.setattr(jev, "_ask", no_sdk)
+    with pytest.raises(ConfigError, match="uv tool install --editable . --reinstall"):
+        jev.pick("track", "x", ITEMS)
