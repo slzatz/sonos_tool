@@ -6,6 +6,7 @@ a person at a terminal and by an AI agent running shell commands.
 ```
 sonos search track thunder road springsteen
 sonos queue add-track 1 --play
+sonos search track live traveling alone jason isbell --play   # jev picks the match
 sonos volume down
 sonos status
 ```
@@ -55,7 +56,14 @@ in the Sonos app (Amazon Music by default).
    `~/.config/SoCo/token_store.json`. If you later switch the default speaker to one in
    a different household (S1 vs S2), run `sonos auth` again for that household.
 
-To update later: `cd ~/sonos_tool && git pull` (the editable install picks up changes).
+5. Optional: let `sonos search ... --play` pick the result for you. Get a
+   [TypeSafe](https://typesafe.ai) API key from https://console.typesafe.ai/keys and either
+   `export TYPESAFE_API_KEY=...` in your shell startup file or add
+   `typesafe_api_key = "..."` to `~/.sonos/config.toml`. Without a key everything else works
+   and `--play` / `--add` exit with code 3.
+
+To update later: `cd ~/sonos_tool && git pull` (the editable install picks up code changes;
+if `pyproject.toml` gained a dependency, also run `uv tool install --editable . --reinstall`).
 To remove: `uv tool uninstall sonos-tool` and delete `~/.sonos` if you want the playlists gone too.
 
 ## Configuration
@@ -65,6 +73,7 @@ To remove: `uv tool uninstall sonos-tool` and delete `~/.sonos` if you want the 
 ```toml
 speaker = "Living Room"
 music_service = "Amazon Music"
+typesafe_api_key = "..."      # optional; $TYPESAFE_API_KEY takes precedence
 ```
 
 Speaker precedence for any single command: `--speaker NAME` flag, then `$SONOS_SPEAKER`,
@@ -91,6 +100,8 @@ Add `--json` before the command for machine-readable output.
 | `sonos mute` / `sonos unmute` | Mute the group |
 | `sonos search track QUERY...` | Search tracks; results numbered and cached |
 | `sonos search album QUERY...` | Search albums; results numbered and cached |
+| `sonos search track QUERY... --play` | Search, let jev pick the best match, queue it and play it |
+| `sonos search album QUERY... --add` | Same, but only add the pick to the queue (`--add` works for tracks too) |
 | `sonos queue` | Show the queue (▶ marks the playing track) |
 | `sonos queue add-track POS [POS...] [--play]` | Add track(s) from the last track search |
 | `sonos queue add-album POS [POS...] [--play]` | Add album(s) from the last album search |
@@ -129,6 +140,37 @@ Playing from queue position 1
 
 Position 1 is often but not always the right result, so read the artist and album
 columns before choosing.
+
+### Letting jev choose: `--play` and `--add`
+
+`sonos search track QUERY --play` does the reading for you. The numbered results are sent
+to [jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), TypeSafe's
+classifier model, as the options of one multiple-choice question whose state is your
+query; jev answers with a position, a probability per option and a confidence, in well
+under a second. The chosen result is added to the queue and played (`--add` only queues
+it). The list is still printed, followed by the pick, so a wrong pick is one
+`sonos queue add-track POS --play` away.
+
+```
+$ sonos search track live traveling alone jason isbell --play
+1. Traveling Alone - Jason Isbell - Southeastern
+2. Traveling Alone (Live) - Jason Isbell - Live from the Ryman
+3. Traveling Alone - Some Cover Band - Isbell Tribute
+Picked 2 (confidence 0.91): Traveling Alone (Live) - Jason Isbell - Live from the Ryman
+Added 'Traveling Alone (Live)' by Jason Isbell at queue position 14
+Playing from queue position 14
+```
+
+jev is told to prefer the named artist and the original studio recording unless the
+query asks for a live, remastered or other specific version, and never to pick covers,
+karaoke or tribute versions. It may also answer that nothing fits (for example when an
+artist is not in the catalog and every result is a cover); then nothing is queued, the
+list is printed, and the command exits 1 with a message pointing at the manual flow.
+
+This needs a TypeSafe API key (`$TYPESAFE_API_KEY` or `typesafe_api_key` in the config
+file); a missing key exits 3 before the speaker is touched. A pick costs a fraction of a
+cent. With `--json` the document is `{"results", "pick": {"position", "confidence",
+"probabilities"}, "added", "playing_from"}`.
 
 ## For agents
 

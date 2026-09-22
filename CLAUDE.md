@@ -19,6 +19,7 @@ src/sonos_tool/
   config.py    ~/.sonos/config.toml, speaker resolution (IP cache -> multicast -> subnet scan)
   store.py     paths and JSON I/O under ~/.sonos (search results, playlists, caches)
   didl.py      the one DIDL-Lite template used to enqueue music-service items
+  jev.py       `search --play/--add`: asks TypeSafe's jev classifier which result matches the query
   errors.py    SonosToolError subclasses with exit codes (1 general, 2 auth, 3 config, 4 speaker)
 tests/         pytest; no network, no speaker (fakes via monkeypatch, $SONOS_HOME for state)
 ```
@@ -30,7 +31,13 @@ tests/         pytest; no network, no speaker (fakes via monkeypatch, $SONOS_HOM
 - `actions.py` returns data, never formatted strings. Formatting lives in `cli.py`.
 - Errors are raised as `SonosToolError` subclasses; `SonosGroup.invoke` prints them to
   stderr and exits with the class's exit code. Never `print()` from `actions.py`.
-- No import-time side effects: speaker and music-service connections are created lazily.
+- No import-time side effects: speaker and music-service connections are created lazily,
+  and the `typesafe_sdk` import lives inside `jev._ask`, reached only via `--play`/`--add`.
+  Tests replace `jev._ask` (unit) or `jev.pick` (CLI); nothing calls TypeSafe offline.
+- `jev.pick` builds one Choice question whose options are the search positions plus
+  `none`; `none` means nothing is queued and the CLI exits 1. There is no confidence
+  threshold on purpose (TypeSafe's guidance for pure selection is to take the top option);
+  the confidence is reported so one can be added if real use shows the need.
 - Every command must work with `--json` and produce one JSON document.
 - Runtime state stays under `~/.sonos` (override with `$SONOS_HOME`); the music-service
   token is SoCo's `~/.config/SoCo/token_store.json` (override with `$SONOS_TOKEN_STORE`).

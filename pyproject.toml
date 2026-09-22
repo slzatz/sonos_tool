@@ -9,6 +9,7 @@ authors = [{ name = "slzatz" }]
 dependencies = [
     "soco>=0.31.2",
     "click>=8.1",
+    "typesafe-sdk>=0.7,<1",
 ]
 
 [project.scripts]

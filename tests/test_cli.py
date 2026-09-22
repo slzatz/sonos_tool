@@ -356,3 +356,72 @@ def test_auth_two_step_flow(fake, monkeypatch):
     assert "authorized" in run("auth", "--status").output
     r = run("auth", "--complete")
     assert r.exit_code == 1  # nothing pending
+
+
+# --- search --play / --add (jev picks the result) ---------------------------
+
+
+def _searches(monkeypatch, items=TRACKS):
+    calls = []
+
+    def fake_search(device, kind, q):
+        calls.append(q)
+        store.save_search(kind, items)
+        return items
+
+    monkeypatch.setattr(actions, "search", fake_search)
+    return calls
+
+
+def test_search_play_picks_and_plays(fake, monkeypatch):
+    from sonos_tool import jev
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    _searches(monkeypatch)
+    monkeypatch.setattr(jev, "pick", lambda kind, q, items: {"position": 2, "confidence": 0.9, "probabilities": {"2": 0.9}})
+    r = run("search", "track", "heart", "of", "gold", "live", "--play")
+    assert r.exit_code == 0, r.output
+    assert "2. Heart of Gold (Live) - Neil Young - Live at Massey Hall" in r.output
+    assert "Picked 2 (confidence 0.90): Heart of Gold (Live) - Neil Young - Live at Massey Hall" in r.output
+    assert "Added 'Heart of Gold (Live)' by Neil Young at queue position 2" in r.output
+    assert "Playing from queue position 2" in r.output
+    assert "position 1 is not always" not in r.output
+    assert fake.played == 1
+
+
+def test_search_add_enqueues_without_playing_and_json_is_one_document(fake, monkeypatch):
+    from sonos_tool import jev
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    _searches(monkeypatch)
+    monkeypatch.setattr(jev, "pick", lambda kind, q, items: {"position": 1, "confidence": 0.8, "probabilities": {"1": 0.8}})
+    r = run("--json", "search", "track", "heart", "of", "gold", "--add")
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)  # raises if more than one document
+    assert data["pick"]["position"] == 1
+    assert data["results"][0]["title"] == "Heart of Gold"
+    assert data["added"][0]["first_position"] == 2
+    assert data["playing_from"] is None
+    assert fake.played is None
+    assert fake.q[-1]["title"] == "Heart of Gold"
+
+
+def test_search_play_none_lists_results_and_fails(fake, monkeypatch):
+    from sonos_tool import jev
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    _searches(monkeypatch)
+    monkeypatch.setattr(jev, "pick", lambda kind, q, items: {"position": None, "confidence": 0.7, "probabilities": {}})
+    r = run("search", "track", "heart", "of", "gold", "--play")
+    assert r.exit_code == 1
+    assert "1. Heart of Gold - Neil Young - Harvest" in r.output
+    err = r.stderr if hasattr(r, "stderr") and r.stderr else r.output
+    assert "No result matched" in err and "queue add-track POS --play" in err
+    assert len(fake.q) == 1 and fake.played is None
+
+
+def test_search_play_without_key_fails_before_searching(fake, monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    calls = _searches(monkeypatch)
+    r = run("search", "track", "heart", "of", "gold", "--play")
+    assert r.exit_code == 3
+    err = r.stderr if hasattr(r, "stderr") and r.stderr else r.output
+    assert "TYPESAFE_API_KEY" in err
+    assert calls == []

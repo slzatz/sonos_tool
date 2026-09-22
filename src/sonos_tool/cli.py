@@ -13,7 +13,7 @@ import sys
 import click
 from soco.exceptions import SoCoException
 
-from . import __version__, actions, config, store
+from . import __version__, actions, config, jev, store
 from .errors import SonosToolError
 
 
@@ -252,34 +252,65 @@ def search():
     """Search the music service. Results are numbered and cached for `queue add-*`."""
 
 
-def _run_search(c: Context, kind: str, query: tuple[str, ...]):
+def _run_search(c: Context, kind: str, query: tuple[str, ...], play: bool = False, add: bool = False):
     q = " ".join(query).strip()
     if not q:
         raise SonosToolError("QUERY is required.")
+    if play or add:
+        jev.api_key()  # fail fast on a missing key, before touching the speaker
     items = actions.search(c.player().device, kind, q)
     if not items:
         c.emit([], f"No {kind}s found for '{q}'.")
         return
-    noun = "album" if kind == "album" else "track"
-    hint = (f"\n\nCheck artist and album before choosing; position 1 is not always the right one."
-            f"\nNext: sonos queue add-{noun} POS [POS...] [--play]")
-    c.emit(items, _numbered(items) + hint)
+    if not (play or add):
+        hint = (f"\n\nCheck artist and album before choosing; position 1 is not always the right one."
+                f"\nNext: sonos queue add-{kind} POS [POS...] [--play]")
+        c.emit(items, _numbered(items) + hint)
+        return
+
+    choice = jev.pick(kind, q, items)
+    pos = choice["position"]
+    if pos is None:
+        if not c.as_json:
+            click.echo(_numbered(items))
+        raise SonosToolError(
+            f"No result matched '{q}' closely enough to play (confidence {choice['confidence']:.2f}); "
+            f"choose one with `sonos queue add-{kind} POS --play`."
+        )
+    added, lines = _enqueue_positions(c, kind, [pos], play)
+    text = (f"{_numbered(items)}\n"
+            f"Picked {pos} (confidence {choice['confidence']:.2f}): {_fmt_track(items[pos - 1])}\n"
+            + "\n".join(lines))
+    c.emit({"results": items, "pick": choice, **added}, text)
+
+
+_pick_help = "Let jev (TypeSafe) pick the best match, add it to the queue"
 
 
 @search.command("track")
 @click.argument("query", nargs=-1)
+@click.option("--play", is_flag=True, help=f"{_pick_help} and play it.")
+@click.option("--add", is_flag=True, help=f"{_pick_help}; do not change playback.")
 @pass_ctx
-def search_track(c: Context, query):
-    """Search tracks, e.g. `sonos search track thunder road bruce springsteen`."""
-    _run_search(c, "track", query)
+def search_track(c: Context, query, play, add):
+    """Search tracks, e.g. `sonos search track thunder road bruce springsteen`.
+
+    With --play or --add the best result is chosen automatically (needs $TYPESAFE_API_KEY).
+    """
+    _run_search(c, "track", query, play, add)
 
 
 @search.command("album")
 @click.argument("query", nargs=-1)
+@click.option("--play", is_flag=True, help=f"{_pick_help} and play it.")
+@click.option("--add", is_flag=True, help=f"{_pick_help}; do not change playback.")
 @pass_ctx
-def search_album(c: Context, query):
-    """Search albums, e.g. `sonos search album nebraska springsteen`."""
-    _run_search(c, "album", query)
+def search_album(c: Context, query, play, add):
+    """Search albums, e.g. `sonos search album nebraska springsteen`.
+
+    With --play or --add the best result is chosen automatically (needs $TYPESAFE_API_KEY).
+    """
+    _run_search(c, "album", query, play, add)
 
 
 # --- queue --------------------------------------------------------------------
@@ -308,11 +339,13 @@ def queue(ctx, c: Context):
     c.emit(items, "\n".join(lines))
 
 
-def _add_from_search(c: Context, kind: str, positions: tuple[int, ...], play: bool):
-    if not positions:
-        raise SonosToolError("At least one POS is required.")
+def _enqueue_positions(c: Context, kind: str, positions: list[int], play: bool) -> tuple[dict, list[str]]:
+    """Enqueue 1-indexed positions of the last `kind` search; play the first if asked.
+
+    Returns ({"added": [...], "playing_from": pos | None}, human-readable lines).
+    """
     p = c.player()
-    added = p.enqueue_search_results(kind, list(positions))
+    added = p.enqueue_search_results(kind, positions)
     lines = []
     data = []
     for item, first, count in added:
@@ -327,7 +360,14 @@ def _add_from_search(c: Context, kind: str, positions: tuple[int, ...], play: bo
         first = added[0][1]
         p.play_from_queue(first - 1)
         lines.append(f"Playing from queue position {first}")
-    c.emit({"added": data, "playing_from": added[0][1] if play and added else None}, "\n".join(lines))
+    return {"added": data, "playing_from": added[0][1] if play and added else None}, lines
+
+
+def _add_from_search(c: Context, kind: str, positions: tuple[int, ...], play: bool):
+    if not positions:
+        raise SonosToolError("At least one POS is required.")
+    data, lines = _enqueue_positions(c, kind, list(positions), play)
+    c.emit(data, "\n".join(lines))
 
 
 @queue.command("add-track")

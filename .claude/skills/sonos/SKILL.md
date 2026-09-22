@@ -13,25 +13,42 @@ stderr with a non-zero exit code. Add `--json` before the subcommand for JSON ou
 
 1. Decide track vs album from the request ("play Heart of Gold" is a track; "play Harvest" or
    "play the album ..." is an album).
-2. Search. Include the artist when you know it - the query matches artist and title
-   together, so naming both narrows the results rather than restricting them.
+2. Search with `--play`. Include the artist when you know it, and any qualifier the user
+   gave (live, acoustic, remaster) - the query matches artist and title together, and the
+   words are also what the picker sees.
    ```
-   sonos search track thunder road bruce springsteen
-   sonos search album nebraska springsteen
+   sonos search track live traveling alone jason isbell --play
+   sonos search album nebraska springsteen --play
    ```
-3. Read the numbered results. **Position 1 is not always right**: check the artist and album
-   columns (live versions, covers, tribute albums and remasters are common). Briefly tell the
-   user which one you picked and why if it was not obvious.
-4. Add and play in one step:
-   ```
-   sonos queue add-track 3 --play
-   sonos queue add-album 1 --play
-   ```
-   Several positions may be given at once (`sonos queue add-track 2 5 9`). Albums expand to
-   all their tracks; the output reports the queue positions used.
+   `--play` sends the numbered results to jev, a classifier, which picks the one that best
+   matches the query; the tool queues it and starts it. The output is the numbered list,
+   a `Picked N (confidence X)` line, and the queue position. Use `--add` instead of `--play`
+   when the user said "add ... to the queue" (playback unchanged).
+3. Report the pick to the user from the `Picked` line. If the confidence is low (under
+   about 0.5) or the picked artist or version is not what the user asked for, say so and
+   offer the alternatives from the list.
+4. Fall back to choosing yourself when `--play` cannot pick:
+   - exit code 1, "No result matched": nothing was queued; the list was printed. Read it
+     (see below) and, if one result is right, `sonos queue add-track N --play`. If every
+     result is a cover, karaoke or tribute version, tell the user the artist is probably
+     not in the catalog rather than queueing a cover.
+   - exit code 3, "No TypeSafe API key": this machine has no key. Run the search without
+     `--play`, read the results, and add by position.
 
-Without `--play` the items are appended to the queue and playback is unchanged, which is
-what "add X to the queue" means. Use `sonos play POS` to start at a specific position later.
+### Choosing by hand
+
+```
+sonos search track thunder road bruce springsteen
+sonos queue add-track 3 --play
+sonos queue add-album 1 --play
+```
+
+Read the numbered results. **Position 1 is not always right**: check the artist and album
+columns (live versions, covers, tribute albums and remasters are common). Briefly tell the
+user which one you picked and why if it was not obvious. Several positions may be given at
+once (`sonos queue add-track 2 5 9`). Albums expand to all their tracks; the output reports
+the queue positions used. Without `--play` the items are appended to the queue and playback
+is unchanged. Use `sonos play POS` to start at a specific position later.
 
 ## Command reference
 
@@ -45,6 +62,7 @@ what "add X to the queue" means. Use `sonos play POS` to start at a specific pos
 | Volume | `sonos volume` (show), `sonos volume 35`, `sonos volume up`, `sonos volume down 5` |
 | Mute | `sonos mute`, `sonos unmute` |
 | Search | `sonos search track WORDS...`, `sonos search album WORDS...` |
+| Search, pick and play | `sonos search track WORDS... --play` (or `--add`); same for `album` |
 | Add from last search | `sonos queue add-track N [N...] [--play]`, `sonos queue add-album N [N...] [--play]` |
 | Local playlists | `sonos playlist list`, `sonos playlist show NAME` |
 | Save a track to a playlist | `sonos playlist add NAME --from-search N` or `--from-queue N` |
@@ -75,6 +93,8 @@ is `sonos volume up 5`.
 - Exit code 3, no speaker configured: run `sonos speakers` then `sonos speaker set NAME`.
 - Search results are cached per kind (track or album). A new search of the same kind
   replaces the previous numbering, so add items before searching again.
+- `--json` with `--play`/`--add` returns one document: `{"results", "pick": {"position",
+  "confidence", "probabilities"}, "added", "playing_from"}`.
 
 ## Responding to the user
 
