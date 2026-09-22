@@ -57,9 +57,11 @@ class SonosGroup(click.Group):
 
 
 def _fmt_track(t: dict) -> str:
-    """title - artist - album, omitting empty or unknown parts."""
-    parts = [t.get("title", ""), t.get("artist", ""), t.get("album", "")]
-    return " - ".join(p for p in parts if p and not p.startswith("Unknown "))
+    """title - artist - album, omitting empty, unknown or redundant parts."""
+    title, artist, album = (t.get(k, "") for k in ("title", "artist", "album"))
+    if album == title:
+        album = ""  # album search results carry album == title; don't print it twice
+    return " - ".join(p for p in (title, artist, album) if p and not p.startswith("Unknown "))
 
 
 def _numbered(items: list[dict]) -> str:

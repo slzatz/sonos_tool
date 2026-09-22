@@ -252,6 +252,17 @@ def test_search_album_keeps_only_albums(sonos_home, monkeypatch):
     assert store.load_search("album") == items
 
 
+def test_album_title_not_printed_twice():
+    """Album search results carry album == title; the line must not repeat it."""
+    assert cli._fmt_track(
+        {"title": "Nebraska", "artist": "Bruce Springsteen", "album": "Nebraska"}
+    ) == "Nebraska - Bruce Springsteen"
+    # a track whose album genuinely differs still shows all three
+    assert cli._fmt_track(
+        {"title": "Atlantic City", "artist": "Bruce Springsteen", "album": "Nebraska"}
+    ) == "Atlantic City - Bruce Springsteen - Nebraska"
+
+
 def test_search_retries_401_then_auth_error(sonos_home, monkeypatch):
     import requests
 
