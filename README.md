@@ -168,7 +168,15 @@ artist is not in the catalog and every result is a cover); then nothing is queue
 list is printed, and the command exits 1 with a message pointing at the manual flow.
 
 This needs a TypeSafe API key (`$TYPESAFE_API_KEY` or `typesafe_api_key` in the config
-file); a missing key exits 3 before the speaker is touched. A pick costs a fraction of a
+file); a missing key exits 3 before the speaker is touched.
+
+For typing at a terminal, `scripts/play` is a tiny shell wrapper so that
+`play live jason isbell traveling alone` runs the track command above, `play -a southeastern`
+runs the album one, and `play -q ...` uses `--add`. Link it onto your PATH once:
+
+```bash
+ln -s ~/sonos_tool/scripts/play ~/.local/bin/play
+``` A pick costs a fraction of a
 cent. With `--json` the document is `{"results", "pick": {"position", "confidence",
 "probabilities"}, "added", "playing_from"}`.
 

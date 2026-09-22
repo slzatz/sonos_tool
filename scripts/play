@@ -1,0 +1,25 @@
+#!/bin/sh
+# play - search Amazon Music and let jev pick what to play.
+#
+#   play WORDS...            same as: sonos search track WORDS... --play
+#   play -a|--album WORDS... same as: sonos search album WORDS... --play
+#   play -q|--queue WORDS... add the pick to the queue without changing playback (--add)
+#
+# The words may be quoted or not: play "live jason isbell traveling alone" and
+# play live jason isbell traveling alone are the same search. Needs a TypeSafe
+# API key (see the sonos README); exit codes are sonos's own.
+
+kind=track
+mode=--play
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -a|--album) kind=album; shift ;;
+        -q|--queue) mode=--add; shift ;;
+        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --) shift; break ;;
+        -*) echo "play: unknown option $1 (try play --help)" >&2; exit 1 ;;
+        *) break ;;
+    esac
+done
+[ $# -gt 0 ] || { echo "usage: play [-a|--album] [-q|--queue] WORDS..." >&2; exit 1; }
+exec sonos search "$kind" "$@" "$mode"
