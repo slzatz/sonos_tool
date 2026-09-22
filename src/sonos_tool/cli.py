@@ -268,7 +268,7 @@ def _run_search(c: Context, kind: str, query: tuple[str, ...]):
 @click.argument("query", nargs=-1)
 @pass_ctx
 def search_track(c: Context, query):
-    """Search tracks, e.g. `sonos search track heart of gold neil young`."""
+    """Search tracks, e.g. `sonos search track thunder road bruce springsteen`."""
     _run_search(c, "track", query)
 
 

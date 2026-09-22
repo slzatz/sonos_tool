@@ -13,10 +13,11 @@ stderr with a non-zero exit code. Add `--json` before the subcommand for JSON ou
 
 1. Decide track vs album from the request ("play Heart of Gold" is a track; "play Harvest" or
    "play the album ..." is an album).
-2. Search. Include the artist when you know it.
+2. Search. Include the artist when you know it - the query matches artist and title
+   together, so naming both narrows the results rather than restricting them.
    ```
-   sonos search track heart of gold neil young
-   sonos search album harvest neil young
+   sonos search track thunder road bruce springsteen
+   sonos search album nebraska springsteen
    ```
 3. Read the numbered results. **Position 1 is not always right**: check the artist and album
    columns (live versions, covers, tribute albums and remasters are common). Briefly tell the
@@ -60,6 +61,11 @@ is `sonos volume up 5`.
 
 - `sonos search ...` returns nothing: try fewer words (drop "the", drop the album name, or
   search by artist and title only) before telling the user it was not found.
+- A search returns up to about 18 tracks or 9 albums, so a common title may not show every
+  recording of it. Add the artist to the query rather than paging - there is no paging.
+- If every result is a cover, karaoke or tribute version, the artist may not be in the
+  catalog at all (Neil Young pulled his, for one). Say so rather than queueing a cover the
+  user did not ask for.
 - Exit code 2, "not authorized for the Sonos household": this machine has not linked the
   music service for that household. Tell the user to run `sonos auth` in a terminal (it
   needs a browser sign-in); do not attempt it yourself.
@@ -72,6 +78,6 @@ is `sonos volume up 5`.
 
 ## Responding to the user
 
-Confirm what happened in one line using the tool's output, e.g. "Playing Heart of Gold by
-Neil Young from Harvest." Do not paste raw command output unless the user asked to see a
-list (queue, search results, playlists).
+Confirm what happened in one line using the tool's output, e.g. "Playing Thunder Road by
+Bruce Springsteen from Born to Run." Do not paste raw command output unless the user asked
+to see a list (queue, search results, playlists).

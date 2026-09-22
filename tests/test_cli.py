@@ -175,7 +175,7 @@ def test_search_parses_and_quotes_amazon_ids(sonos_home, monkeypatch):
             pass
 
         def search(self, category, query):
-            assert category == "tracks"
+            assert category == "all"
             return [Track()]
 
     monkeypatch.setattr(actions, "MusicService", FakeMS)
@@ -184,6 +184,72 @@ def test_search_parses_and_quotes_amazon_ids(sonos_home, monkeypatch):
     assert items[0]["uri"].endswith("?sid=201&amp;sn=0")
     assert items[0]["album"] == ""
     assert store.load_search("track") == items
+
+
+def _fake_ms(results):
+    """A MusicService stand-in whose universal search returns `results`."""
+    class FakeMS:
+        auth_type = "Anonymous"
+
+        def __init__(self, name, token_store=None, device=None):
+            pass
+
+        def search(self, category, query):
+            assert category == "all"
+            return results
+
+    return FakeMS
+
+
+class _Item:
+    """Stands in for an MSTrack / MSAlbum / MSArtist from a universal search."""
+
+    def __init__(self, item_id, title, uri, artist=None, track_metadata=False):
+        self.title = title
+        self.uri = uri
+        self.metadata = {"id": item_id, "title": title}
+        if artist is not None and not track_metadata:
+            self.metadata["artist"] = artist
+        if track_metadata:
+            inner = type("TM", (), {"metadata": {"artist": artist}})()
+            self.metadata["track_metadata"] = inner
+
+
+def test_search_track_drops_podcast_episodes(sonos_home, monkeypatch):
+    """Podcast episodes come back from the universal search as tracks; drop them."""
+    song = _Item("catalog:track:asin:B002G3NK88", "Heart Of Gold",
+                 "soco://0fffffffcatalog%253Atrack%253Aasin%253AB002G3NK88?sid=201&sn=0",
+                 artist="Neil Young", track_metadata=True)
+    episode = _Item("podcast:episode:uuid:3ce17591", "A Heart Of Gold | With Ruth Negga",
+                    "soco://0fffffffpodcast%253Aepisode%253Auuid%253A3ce17591?sid=201&sn=0",
+                    artist=None, track_metadata=True)
+
+    monkeypatch.setattr(actions, "MusicService", _fake_ms([episode, song, episode]))
+    items = actions.search(object(), "track", "heart of gold")
+    assert [i["title"] for i in items] == ["Heart Of Gold"]
+    assert items[0]["artist"] == "Neil Young"
+    assert store.load_search("track") == items
+
+
+def test_search_album_keeps_only_albums(sonos_home, monkeypatch):
+    """A universal search mixes artists and playlists in; only albums survive."""
+    album = _Item("catalog:album:asin:B00138GZ5W", "Nebraska",
+                  "x-rincon-cpcontainer:0fffffffcatalog%3Aalbum%3Aasin%3AB00138GZ5W",
+                  artist="Bruce Springsteen")
+    artist = _Item("catalog:artist:asin:B000QJJ", "Bruce Springsteen",
+                   "x-rincon-cpcontainer:0fffffffcatalog%3Aartist%3Aasin%3AB000QJJ")
+    playlist = _Item("catalog:playlist:asin:B0CXC", "Springsteen Essentials",
+                     "x-rincon-cpcontainer:0fffffffcatalog%3Aplaylist%3Aasin%3AB0CXC")
+
+    monkeypatch.setattr(actions, "MusicService", _fake_ms([artist, playlist, album]))
+    items = actions.search(object(), "album", "nebraska springsteen")
+    assert len(items) == 1
+    assert items[0]["title"] == items[0]["album"] == "Nebraska"
+    assert items[0]["artist"] == "Bruce Springsteen"
+    assert items[0]["item_id"] == "catalog%3Aalbum%3Aasin%3AB00138GZ5W"
+    # container URIs are enqueued as-is; only track URIs get HTML-escaped
+    assert items[0]["uri"] == album.uri
+    assert store.load_search("album") == items
 
 
 def test_search_retries_401_then_auth_error(sonos_home, monkeypatch):

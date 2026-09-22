@@ -112,6 +112,11 @@ Searching never changes the speaker. It prints a numbered list and caches it to
 those numbers. Several positions can be given at once, and `--play` starts playback from
 the first item added.
 
+Queries match artist and title together, so naming both is the way to narrow a search:
+`sonos search track traveling alone jason isbell` finds the right recording where
+`traveling alone` alone returns every cover of it. A search returns up to about 18
+tracks or 9 albums.
+
 ```
 $ sonos search album nebraska springsteen
 1. Nebraska - Bruce Springsteen
@@ -165,9 +170,11 @@ system for a single command.
 
 ## Troubleshooting
 
-- **Search results look wrong for a well-known artist**: some artists are not on Amazon
-  Music at all (Neil Young, for one), so searches return only covers and karaoke versions.
-  That is the catalog, not the tool.
+- **Search results look wrong for a well-known artist**: covers, karaoke versions and
+  tribute albums are common and sometimes outrank the original, so read the artist column
+  rather than taking position 1. If *nothing* by the artist shows up, they may not be on
+  Amazon Music at all - Neil Young had his catalog pulled, so his songs return only other
+  people's versions. That is the catalog, not the tool.
 
 - **"not authorized for the Sonos household of ..."** (exit 2): run `sonos auth`. Searches
   are made through your default speaker's household and each household needs its own

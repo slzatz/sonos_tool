@@ -48,8 +48,23 @@ tests/         pytest; no network, no speaker (fakes via monkeypatch, $SONOS_HOM
   returns only the first to answer, so discovery uses `scan_network(multi_household=True)`
   and the music service is bound to the configured speaker's household. The SMAPI token
   is per household; a missing one is a deterministic 401, fixed by `sonos auth`.
-- Some artists are absent from Amazon Music (Neil Young, for example); their searches
-  return only covers. Use another artist when testing search.
+- Every search goes to `catalog:universal:search` (SoCo category `all`), not to
+  `catalog:tracks:search` / `catalog:albums:search`. The per-type searches resolve a query
+  against one facet only: `traveling alone` and `jason isbell` each work, but
+  `jason isbell traveling alone` returns a single wrong row, and
+  `southeastern jason isbell` returns nothing. Word order does not matter and `index` /
+  `count` do not help - Amazon reports its capped count as the true total. Do not
+  "optimize" the category back to the per-type search.
+- The universal response is mixed, so `search()` filters it by id prefix
+  (`catalog:track:`, `catalog:album:`). Filter on the prefix, not on the SoCo class:
+  podcast episodes arrive as `MSTrack` exactly like music does.
+- Neil Young had his catalog pulled from Amazon Music, so searching for his songs returns
+  covers, karaoke and tribute versions but almost nothing by him. Checked 2026-09-22:
+  of twelve canonical songs only `Heart of Gold (2009 Remaster)` and a 1985 live
+  `The Needle and The Damage Done` survive, both licensing one-offs rather than album
+  tracks. This looks like a search bug and is not one - do not use Neil Young (or any
+  artist you have not confirmed is present) when testing search. Re-check before trusting
+  this note; catalogs change.
 
 ## Working on it
 

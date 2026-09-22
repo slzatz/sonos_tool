@@ -142,8 +142,24 @@ def complete_auth(device: soco.SoCo, pending: dict) -> None:
         ) from e
 
 
+# Amazon's per-type searches (catalog:tracks:search, catalog:albums:search) match only
+# one facet of a query: "traveling alone" and "jason isbell" each work, but
+# "jason isbell traveling alone" returns one wrong row. catalog:universal:search ('all')
+# is the endpoint that understands artist and title together, so everything goes through
+# it and we keep the item types we asked for.
+SEARCH_CATEGORY = "all"
+
+# An 'all' response mixes ids: catalog:track:, catalog:album:, catalog:artist:,
+# catalog:playlist:, catalog:station:, podcast:show:, podcast:episode:. Podcast episodes
+# parse as MSTrack just like music does, so filter on the id prefix, not the class.
+SEARCH_ID_PREFIX = {"track": "catalog:track:", "album": "catalog:album:"}
+
+
 def search(device: soco.SoCo, kind: str, query: str) -> list[dict]:
     """Search the music service (bound to `device`'s household) for tracks or albums.
+
+    The query goes to the universal search, which matches artist and title together;
+    the mixed response is then filtered down to `kind` by its id prefix.
 
     Saves the results to ~/.sonos/search_results/<kind>_search.json so a later
     `queue add-*` / `playlist add --from-search` can refer to them by position.
@@ -151,8 +167,11 @@ def search(device: soco.SoCo, kind: str, query: str) -> list[dict]:
     service id (e.g. catalog%3Atrack%3Aasin%3AB002G3NK88); Sonos requires the DIDL
     item id and the enqueued URI to use the same encoding.
     """
-    category = {"track": "tracks", "album": "albums"}[kind]
-    results = _raw_search(device, category, query)
+    prefix = SEARCH_ID_PREFIX[kind]
+    results = [
+        r for r in _raw_search(device, SEARCH_CATEGORY, query)
+        if str(r.metadata.get("id", "")).startswith(prefix)
+    ]
 
     items: list[dict] = []
     if kind == "track":
