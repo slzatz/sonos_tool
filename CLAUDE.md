@@ -22,6 +22,8 @@ src/sonos_tool/
   jev.py       `search --play/--add`: asks TypeSafe's jev classifier which result matches the query
   errors.py    SonosToolError subclasses with exit codes (1 general, 2 auth, 3 config, 4 speaker)
 tests/         pytest; no network, no speaker (fakes via monkeypatch, $SONOS_HOME for state)
+scripts/play   sh wrapper: `play WORDS...` = `sonos search track WORDS... --play` (-a album, -q --add);
+               symlinked into ~/.local/bin, not installed by uv
 ```
 
 ## Conventions
@@ -65,6 +67,15 @@ tests/         pytest; no network, no speaker (fakes via monkeypatch, $SONOS_HOM
 - The universal response is mixed, so `search()` filters it by id prefix
   (`catalog:track:`, `catalog:album:`). Filter on the prefix, not on the SoCo class:
   podcast episodes arrive as `MSTrack` exactly like music does.
+- jev picks with confidence around 0.6 to 0.7 even when it is clearly right. Amazon lists
+  the same recording twice (two `Traveling Alone (Live)` rows, two `Southeastern` rows) and
+  the rows are identical strings to jev, so the probability splits between them while
+  covers, demos and remasters get 0.00. Checked live 2026-09-22. Do not add a confidence
+  threshold to "fix" this; look at the `--json` probabilities instead.
+- Track search results carry no album, so jev cannot tell two live recordings apart and
+  neither can a person reading the list. The album shows up only after enqueueing
+  (`sonos status`). Resolving albums first would cost one SMAPI call per result
+  (`get_extended_metadata`) and has been judged not worth it.
 - Neil Young had his catalog pulled from Amazon Music, so searching for his songs returns
   covers, karaoke and tribute versions but almost nothing by him. Checked 2026-09-22:
   of twelve canonical songs only `Heart of Gold (2009 Remaster)` and a 1985 live
@@ -87,3 +98,8 @@ remove them and restore the previous playing position. Never leave test playlist
 
 Install for daily use with `uv tool install --editable .`; the installed command then
 tracks the working tree, so a broken edit breaks `sonos` immediately. Run the tests first.
+Adding a dependency to `pyproject.toml` needs `uv tool install --editable . --reinstall`,
+since the tool's venv is separate from `.venv`.
+
+Live checks of `--play`/`--add` need `typesafe_api_key` in `~/.sonos/config.toml`; it is
+already set on this machine. A pick costs a fraction of a cent.
